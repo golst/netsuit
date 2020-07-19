@@ -12,6 +12,7 @@ setuptools.setup(
     long_desctiption=long_description,
     long_description_content_type = "text/markdown",
     packages=setuptools.find_packages(),
+    url='https://github.com/golst/netsuit',
     classifiers=[
         "Programming Language :: Python ::3",
     ],
