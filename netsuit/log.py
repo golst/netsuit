@@ -14,4 +14,3 @@ logging.config.fileConfig(_log_file_path)
 log_root = logging.getLogger('netsuit')
 log_sys= logging.getLogger('netsuit.sys')
 
-log_root.info('test hello')
