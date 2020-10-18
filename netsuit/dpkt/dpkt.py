@@ -8,6 +8,7 @@ import array
 from functools import partial
 
 from netsuit.utils.compat import compat_ord, compat_izip, iteritems
+from netsuit.log import log_sys
 
 class Error(Exception):
     pass
@@ -58,8 +59,8 @@ class Packet(_MetaPacket("Temp", (object,), {})):
             except struct.error:
                 if len(args[0]) < self.__hdr_len__:
                     raise NeedData('got %d, %d needed at least' % (len(args[0]), self.__hdr_len__))
-                raise UnpackError('invalid %s: %r' %
-                                  (self.__class__.__name__, args[0]))
+                    log_sys.info("this class need data")
+                raise UnpackError('invalid %s: %r' % self.__class__.__name__, args[0])
         else:
             for k in self.__hdr_fields__:
                 setattr(self, k, copy.copy(self.__hdr_defaults__[k]))
