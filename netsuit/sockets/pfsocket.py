@@ -99,7 +99,7 @@ class rxRawSocket():
             self.sock.close()
             log_sys.critical("raw socket bind error :%s" % repr(identifier))
             raise SystemExit
-    def rx_packets(self):
+    def rx_packets(self,conn=None):
         pfd = select.poll()
         pfd.register(self.sock,select.POLLIN | select.POLLERR)
         i = 0
@@ -113,12 +113,16 @@ class rxRawSocket():
             tmp = offset + bdesc.offset_to_first_pkt
             tphdr3 = tpacket3_hdr(self.mem[tmp:off_end])
             for _ in range(bdesc.num_pkts):
-                status = yield self.mem[tmp+tphdr3.tp_mac:off_end]
-                tphdr3 = tpacket3_hdr(self.mem[tmp+tphdr3.tp_next_offset:off_end])
+                if conn is None:
+                    status = yield self.mem[tmp+tphdr3.tp_mac:tmp+tphdr3.tp_mac+tphdr3.tp_snaplen]
+                else:
+                    conn.send_bytes(self.mem[tmp+tphdr3.tp_mac:tmp+tphdr3.tp_mac+tphdr3.tp_snaplen])
+                tmp = tmp + tphdr3.tp_next_offset 
+                tphdr3 = tpacket3_hdr(self.mem[tmp:off_end])
             bdesc.block_status = TP_STATUS_KERNEL
             i = (i + 1) % self.bnum
-        
-            
+
+
 class txRawSocket():
     pass 
 
