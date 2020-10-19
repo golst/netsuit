@@ -121,7 +121,29 @@ class rxRawSocket():
                 tphdr3 = tpacket3_hdr(self.mem[tmp:off_end])
             bdesc.block_status = TP_STATUS_KERNEL
             i = (i + 1) % self.bnum
-
+    def rx_fast_packets(self,conn=None):
+        pfd = select.poll()
+        pfd.register(self.sock,select.POLLIN | select.POLLERR)
+        i = 0
+        while True:
+            offset = i * self.bsize
+            status = ctypes.c_uint.from_buffer(self.mem,offset+8)
+            if (status.value & TP_STATUS_USER) == 0:
+                pfd.poll(-1)
+                continue
+            pkt_nums = ctypes.c_uint.from_buffer(self.mem,offset+12).value
+            tmp = offset + ctypes.c_uint.from_buffer(self.mem,16).value 
+            pkt_start = ctypes.c_ushort.from_buffer(self.mem,tmp+24).value
+            pkt_len = ctypes.c_uint.from_buffer(self.mem,tmp+12).value
+            pkt_next = ctypes.c_uint.from_buffer(self.mem,tmp).value
+            for _ in range(pkt_nums):
+                yield self.mem[tmp+pkt_start:tmp+pkt_start+pkt_len]
+                tmp += pkt_next
+                pkt_start = ctypes.c_ushort.from_buffer(self.mem,tmp+24).value
+                pkt_len = ctypes.c_uint.from_buffer(self.mem,tmp+12).value
+                pkt_next = ctypes.c_uint.from_buffer(self.mem,tmp).value
+            status.value = TP_STATUS_KERNEL
+            i = (i + 1) % self.bnum
 
 class txRawSocket():
     pass 
