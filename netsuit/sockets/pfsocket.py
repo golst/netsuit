@@ -21,16 +21,22 @@ ETH_P_ALL = 0x0003
 #some defines about pf_socket
 SOL_PACKET = 263
 PACKET_VERSION = 10
+PACKET_QDISC_BYPASS = 20 
 TPACKET_V2 = 1
 TPACKET_V3 = 2
 PACKET_RX_RING = 5 
+PACKET_TX_RING = 13 
+PACKET_LOSS = 14
 MAP_LOCKED	= 0x02000
+MAP_POPULATE = 0x08000
 
 #status of rx tx ring 
 
 TP_STATUS_USER = 1 << 0 
 TP_STATUS_KERNEL = 0
-
+TP_STATUS_SEND_REQUEST = 1
+TP_STATUS_SENDING = 1 << 1
+MSG_DONTWAIT = 0x40
 class tpacket_req3(Packet):
     __hdr__ = (
         ('tp_block_size','I',0),
@@ -42,6 +48,16 @@ class tpacket_req3(Packet):
         ('tp_feature_req_word','I',0)
     )
     __byte_order__ = '<' if sys.byteorder == 'little' else '>'
+
+class tpacket_req(Packet):
+    __hdr__ = (
+        ('tp_block_size','I',0),
+        ('tp_block_nr','I',0),
+        ('tp_frame_size','I',0),
+        ('tp_frame_nr','I',0)
+    )
+    __byte_order__ = '<' if sys.byteorder == 'little' else '>'
+
 class block_desc(Packet):
     __hdr__ = (
         ('version','I',0),
@@ -144,7 +160,61 @@ class rxRawSocket():
                 pkt_next = ctypes.c_uint.from_buffer(self.mem,tmp).value
             status.value = TP_STATUS_KERNEL
             i = (i + 1) % self.bnum
+    def close(self):
+        self.mem.close()
+        self.sock.close()
 
 class txRawSocket():
-    pass 
+    def __init__(self,interface:str,proto=0,fsize = frame_size,
+        fnum=frame_num,bsize=block_size,bnum=block_num,bypass_qdisc=1):
+        self.fsize = frame_size
+        self.fnum = frame_num
+        self.iface = interface
+        try:
+            self.sock = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,socket.htons(proto))
+            self.sock.setsockopt(SOL_PACKET,PACKET_VERSION,TPACKET_V2)
+            self.sock.setsockopt(SOL_PACKET,PACKET_QDISC_BYPASS,bypass_qdisc)
+            self.sock.setsockopt(SOL_PACKET,PACKET_LOSS,1)
+        except Exception as identifier:
+            log_sys.critical("create raw socket error :%s" % repr(identifier))
+            raise SystemExit
+        try:
+            tpacket = tpacket_req()
+            tpacket.tp_block_size = bsize
+            tpacket.tp_block_nr = bnum
+            tpacket.tp_frame_size = fsize
+            tpacket.tp_frame_nr = fnum
+            self.sock.setsockopt(SOL_PACKET,PACKET_TX_RING,tpacket.pack())
+            self.mem = mmap.mmap(self.sock.fileno(),bsize*bnum,mmap.MAP_SHARED|MAP_LOCKED|MAP_POPULATE,
+                mmap.PROT_READ|mmap.PROT_WRITE)
+        except Exception as identifier:
+            log_sys.critical("set raw socket opt of ring tx error :%s %d" % (repr(identifier),identifier.__traceback__.tb_lineno))
+            self.sock.close()
+            raise SystemExit
+        try:
+            self.sock.bind((interface,0,0,0))
+        except Exception as identifier:
+            self.sock.close()
+            log_sys.critical("raw socket bind error :%s" % repr(identifier))
+            raise SystemExit
+    def send_packets(self,packet:bytes,num=0):
+        always = True if num == 0 else False
+        pkt_len = len(packet)
+        i = 0
+        offset = i * self.fsize
+        while num or always:
+            status = ctypes.c_uint.from_buffer(self.mem,offset)
+            tp_len = ctypes.c_uint.from_buffer(self.mem,offset+4)
+            tp_snaplen = ctypes.c_uint.from_buffer(self.mem,offset+8)
+            if status.value & (TP_STATUS_SEND_REQUEST | TP_STATUS_SENDING):
+                self.sock.sendto(b'',MSG_DONTWAIT,(self.iface,0,0,0))
+                continue
+            tp_len.value = pkt_len
+            tp_snaplen.value = pkt_len
+            self.mem[offset+32:offset+32+pkt_len] = packet
+            status.value = TP_STATUS_SEND_REQUEST
+            i = (i + 1) % self.fnum
+            offset = i * self.fsize
+            num -= 1
+        self.sock.sendto(b'',0,(self.iface,0,0,0))
 
