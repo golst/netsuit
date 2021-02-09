@@ -12,14 +12,16 @@ class wDev():
         res_tmp = subprocess.Popen(cur_info,shell=True,stdout=subprocess.PIPE)
         for line in res_tmp.stdout.readlines():
             line_tmp = line.decode('utf-8')
-            if re.match('\sifindex',line_tmp):
+            if re.match(r'\sifindex',line_tmp):
                 self.ifindex = line_tmp.split(' ')[-1].strip()
-            if re.match("\saddr",line_tmp):
+            if re.match(r"\saddr",line_tmp):
                 self.realMac = line_tmp.split(' ')[-1].strip()
-            if re.match('\stype',line_tmp):
+            if re.match(r'\stype',line_tmp):
                 self.typeMode = line_tmp.split(' ')[-1].strip()
-            if re.match('\schannel',line_tmp):
+            if re.match(r'\schannel',line_tmp):
                 self.curChannel = line_tmp.split(' ')[1].strip()
+            if re.match(r'\swiphy',line_tmp):
+                self.phyName = 'phy' + line_tmp.split(' ')[-1].strip()
         res_tmp.stdout.close()
     def isNetManaged(self,ifaceName):
         nmcli_status = "nmcli device status | grep %s | wc -l" % ifaceName
@@ -48,15 +50,27 @@ class wDev():
         leaveMon = "ip link set %s down;iw dev %s set type managed;ip link set %s up" % (self.ifaceName, self.ifaceName, self.ifaceName)
         self.typeMode = "managed"
         os.system(leaveMon)
-    
+    def supportChannels(self):
+        suppChannels = []
+        getChannels = "iw phy %s channels" % self.phyName
+        res_tmp = subprocess.Popen(getChannels,shell=True,stdout=subprocess.PIPE)
+        for line in res_tmp.stdout.readlines():
+            line = line.decode('utf-8')
+            tmp = re.search(r'\[(\d+)\]',line)
+            if tmp:
+                suppChannels.append(int(tmp.group(1)))
+        res_tmp.stdout.close()
+        return suppChannels
     def changeChannel(self,curChannel):
         self.curChannel = int(curChannel)
         changeChan = "iw dev %s set channel %d" % (self.ifaceName, self.curChannel)
         os.system(changeChan)
 
     def __repr__(self): 
-        pr_content = "dev iface {}:\n\t isNetManaged {}\n\t mac addr {}\n\t type {}\n\t channel {}".format(self.ifaceName,self.isManaged
-            ,self.realMac,self.typeMode,self.curChannel)
+        pr_content = "dev iface {}".format(self.ifaceName)
+        for key in vars(self).keys():
+            pr_content += "\n\t {}: {}".format(key, getattr(self,key))
+        pr_content += "\n\t {}: {}".format("channel",self.supportChannels())
         return pr_content
 
 class wDevs():
